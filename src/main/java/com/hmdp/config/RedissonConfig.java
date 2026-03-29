@@ -12,7 +12,7 @@ public class RedissonConfig {
     public RedissonClient redissonClient() {
         Config config = new Config();
         config.useSingleServer()//说明当前用的是单节点的redis
-                .setAddress("redis://localhost:6379");
+                .setAddress("redis://192.168.222.138:6379").setPassword("123456");
         return Redisson.create(config);
     }
 }

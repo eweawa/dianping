@@ -1,5 +1,5 @@
 server:
-  port: 8081
+  port: 8888
 spring:
   application:
     name: hmdp
@@ -9,8 +9,9 @@ spring:
     username: root
     password: 123456
   redis:
-    host: localhost
+    host: 192.168.222.138
     port: 6379
+    password: 123456
     lettuce:
       pool:
         max-active: 10
@@ -21,11 +22,11 @@ spring:
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
   rabbitmq:
-    host: 192.168.88.128
-    username: haopengmai
+    host: localhost
+    username: admin
     password: 123456
     virtual-host: /
-    port: 15672
+    port: 5672
     listener:
       simple:
         concurrency: 10
