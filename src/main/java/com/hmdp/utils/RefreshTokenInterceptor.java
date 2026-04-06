@@ -23,24 +23,47 @@ public class RefreshTokenInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        //1. 获取请求头中的token
+        // 1. 获取请求头中的token
         String token = request.getHeader("authorization");
-        //2. 如果token是空，直接放行，交给LoginInterceptor处理
+        // 2. 如果token是空，直接放行，交给LoginInterceptor处理
         if (StrUtil.isBlank(token)) {
             return true;
         }
-        String key = RedisConstants.LOGIN_USER_KEY + token;
-        //3. 基于token获取Redis中的用户数据
+
+        // 3. 校验JWT有效性（签名和过期时间）
+        if (!JwtUtils.validateToken(token)) {
+            return true;
+        }
+
+        // 4. 解析JWT获取用户ID
+        Object userIdObj = JwtUtils.parseToken(token).getPayload("id");
+        if (userIdObj == null) {
+            return true;
+        }
+        Long userId = Long.valueOf(userIdObj.toString());
+
+        // 5. 基于用户ID从Redis获取数据
+        String key = RedisConstants.LOGIN_USER_KEY + userId;
         Map<Object, Object> userMap = stringRedisTemplate.opsForHash().entries(key);
-        //4. 判断用户是否存在，不存在，也放行，交给LoginInterceptor
+
+        // 6. 判断用户是否存在
         if (userMap.isEmpty()) {
             return true;
         }
-        //5. 将查询到的Hash数据转化为UserDto对象
+
+        // 7. 校验Token一致性（防止旧Token登录，实现单端登录逻辑）
+        String cachedToken = (String) userMap.get("token");
+        if (!token.equals(cachedToken)) {
+            return true;
+        }
+
+        // 8. 将查询到的Hash数据转化为UserDto对象
         UserDTO userDTO = BeanUtil.fillBeanWithMap(userMap, new UserDTO(), false);
-        //6. 将用户信息保存到ThreadLocal
+
+        // 9. 将用户信息保存到ThreadLocal
         UserHolder.saveUser(userDTO);
-        //7. 刷新tokenTTL，这里的存活时间根据需要自己设置，这里的常量值我改为了30分钟
+
+        // 10. 刷新tokenTTL
         stringRedisTemplate.expire(key, RedisConstants.LOGIN_USER_TTL, TimeUnit.MINUTES);
         return true;
     }

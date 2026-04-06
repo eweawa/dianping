@@ -1,7 +1,6 @@
 package com.hmdp.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.dto.LoginFormDTO;
@@ -15,20 +14,21 @@ import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.connection.BitFieldSubCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
 import javax.mail.MessagingException;
 import javax.servlet.http.HttpSession;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import com.hmdp.utils.JwtUtils;
+import cn.hutool.core.bean.copier.CopyOptions;
 
 import static com.hmdp.utils.RedisConstants.*;
 
@@ -133,28 +133,36 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         {
             user = createuser(phone);
         }
-        //保存用户信息到Redis中
-        String token = UUID.randomUUID().toString();
+        // 7.1. 生成JWT令牌
+        Map<String, Object> payloads = new HashMap<>();
+        payloads.put("id", user.getId());
+        // 设置过期时间
+        long now = System.currentTimeMillis() / 1000;
+        payloads.put("iat", now);
+        payloads.put("nbf", now);
+        payloads.put("exp", now + LOGIN_USER_TTL * 60);
+        String token = JwtUtils.createToken(payloads);
 
-        //7.2 将UserDto对象转为HashMap存储
+        // 7.2. 将UserDTO对象转为HashMap存储
         UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
-        HashMap<String, String > userMap = new HashMap<>();
-        userMap.put("id", String.valueOf(userDTO.getId()));
-        userMap.put("nickName", userDTO.getNickName());
-        userMap.put("icon", userDTO.getIcon());
+        Map<String, Object> userMap = BeanUtil.beanToMap(userDTO, new HashMap<>(),
+                CopyOptions.create()
+                        .setIgnoreNullValue(true)
+                        .setFieldValueEditor((fieldName, fieldValue) -> fieldValue.toString()));
+        // 将当前JWT放入Redis中
+        userMap.put("token", token);
 
-
-        //7.3 存储
-        String tokenKey = LOGIN_USER_KEY + token;
+        // 7.3. 存储到Redis，以用户ID作为Key
+        String tokenKey = LOGIN_USER_KEY + user.getId();
         stringRedisTemplate.opsForHash().putAll(tokenKey, userMap);
 
-        //7.4 设置token有效期为30分钟
+        // 7.4. 设置token有效期
         stringRedisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.MINUTES);
 
-        //7.5 登陆成功则删除验证码信息
+        // 7.5. 登录成功则删除验证码信息
         stringRedisTemplate.delete(LOGIN_CODE_KEY + phone);
 
-        //8. 返回token
+        // 8. 返回token
         return Result.ok(token);
     }
 
